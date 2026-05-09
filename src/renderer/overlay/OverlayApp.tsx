@@ -33,6 +33,10 @@ interface InitPayload {
     bounds: { x: number; y: number; width: number; height: number }
     scaleFactor: number
   }
+  // 关键：window client area 在屏幕上的绝对位置。
+  // 把 event.clientX/Y 加上这个偏移得到屏幕绝对坐标。
+  // mac 上菜单栏会把 client area 往下挤，所以这个值通常 != display.bounds。
+  contentOriginAbs: { x: number; y: number }
 }
 
 const STEP_TITLE: Record<WizardStepKey, string> = {
@@ -158,9 +162,12 @@ export function OverlayApp(): React.ReactElement {
 
   function toAbsolute(rect: ScreenRect): ScreenRect {
     if (!init) return rect
+    // 用 contentOriginAbs（client area 真实左上角）而不是 display.bounds：
+    // mac frameless window 的 client 区域被菜单栏推下后，二者会差 24-37px，
+    // 用 display.bounds 会让纵向坐标整体偏小，点击落在输入框上边缘。
     return {
-      x: rect.x + init.display.bounds.x,
-      y: rect.y + init.display.bounds.y,
+      x: rect.x + init.contentOriginAbs.x,
+      y: rect.y + init.contentOriginAbs.y,
       width: rect.width,
       height: rect.height
     }

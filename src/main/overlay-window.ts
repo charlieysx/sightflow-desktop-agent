@@ -122,21 +122,27 @@ export async function runBoxSelectWizard(opts: WizardOpenOptions): Promise<Wizar
 
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
-  const initialPayload = {
-    id: wizardId,
-    appType: opts.appType,
-    steps: opts.steps ?? (['contactList', 'chatMain', 'inputBox'] as WizardStepKey[]),
-    prefill: opts.prefill ?? null,
-    display: {
-      id: display.id,
-      bounds: display.bounds,
-      scaleFactor: display.scaleFactor
-    }
-  }
-
-  // renderer ready 后注入参数；同时主进程在窗口加载完成时也主动 send，两边都兜一下。
+  // renderer ready 后注入参数；主进程在 did-finish-load 时再读一次 contentBounds，
+  // 确保拿到的是系统让位（macOS 菜单栏 / Linux 装饰）之后的真实 client area。
+  // 用 contentOriginAbs 而不是 display.bounds 作为 event.clientX/Y → 屏幕绝对坐标
+  // 的偏移：mac 上 frameless + transparent 的 alwaysOnTop window 即使 bounds 设到
+  // (0, 0)，client 区域也会被菜单栏推下 ~24-37px；当年用 display.bounds 当偏移
+  // 会让所有 y 坐标整体偏小，反映到点击就是"输入框点到了上边缘"。
   const sendInit = (): void => {
-    if (!win.isDestroyed()) win.webContents.send('overlay-wizard:init', initialPayload)
+    if (win.isDestroyed()) return
+    const cb = win.getContentBounds()
+    win.webContents.send('overlay-wizard:init', {
+      id: wizardId,
+      appType: opts.appType,
+      steps: opts.steps ?? (['contactList', 'chatMain', 'inputBox'] as WizardStepKey[]),
+      prefill: opts.prefill ?? null,
+      display: {
+        id: display.id,
+        bounds: display.bounds,
+        scaleFactor: display.scaleFactor
+      },
+      contentOriginAbs: { x: cb.x, y: cb.y }
+    })
   }
   win.webContents.once('did-finish-load', sendInit)
   ipcMain.once(`overlay-wizard:request-init:${wizardId}`, sendInit)
